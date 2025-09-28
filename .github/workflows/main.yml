@@ -1,76 +1,30 @@
----
-- name: Install and configure VNC server
-  hosts: all
-  become: true
-  vars:
-    vnc_user: "runner"  # Change to your user
-    vnc_display: ":1"
-    vnc_port: "5901"
-    vnc_geometry: "1280x800"
-    vnc_depth: "24"
+name: Run Python Script
 
-  tasks:
-    - name: Update apt package cache
-      apt:
-        update_cache: yes
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 0 * * *'  # Runs daily at midnight UTC
 
-    - name: Install Xfce desktop and goodies
-      apt:
-        name:
-          - xfce4
-          - xfce4-goodies
-        state: present
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
 
-    - name: Install TightVNC server
-      apt:
-        name: tightvncserver
-        state: present
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-    - name: Ensure .vnc directory exists
-      file:
-        path: "/home/{{ vnc_user }}/.vnc"
-        state: directory
-        owner: "{{ vnc_user }}"
-        group: "{{ vnc_user }}"
-        mode: '0755'
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
 
-    - name: Set VNC password (non-interactive)
-      shell: |
-        echo "password" | vncpasswd -f > /home/{{ vnc_user }}/.vnc/passwd
-      args:
-        executable: /bin/bash
-      become_user: "{{ vnc_user }}"
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-    - name: Set secure permissions on VNC password file
-      file:
-        path: "/home/{{ vnc_user }}/.vnc/passwd"
-        owner: "{{ vnc_user }}"
-        group: "{{ vnc_user }}"
-        mode: '0600'
-
-    - name: Create xstartup script for Xfce
-      copy:
-        dest: "/home/{{ vnc_user }}/.vnc/xstartup"
-        content: |
-          #!/bin/bash
-          xrdb "$HOME/.Xresources"
-          startxfce4 &
-        owner: "{{ vnc_user }}"
-        group: "{{ vnc_user }}"
-        mode: '0755'
-
-    - name: Start VNC server (on display {{ vnc_display }})
-      shell: "vncserver {{ vnc_display }} -geometry {{ vnc_geometry }} -depth {{ vnc_depth }} -localhost no"
-      args:
-        executable: /bin/bash
-      become_user: "{{ vnc_user }}"
-      environment:
-        USER: "{{ vnc_user }}"
-        HOME: "/home/{{ vnc_user }}"
-
-    - name: Display connection information (for manual use)
-      debug:
-        msg: |
-          VNC Server is running on display {{ vnc_display }} (port {{ vnc_port }}).
-          Connect using a VNC viewer to {{ ansible_host }}:{{ vnc_port }}.
-          Note: You will need to use a tunneling service like 'cloudflared' to expose this port to the internet.
+    - name: Execute Python script
+      run: python script.py
