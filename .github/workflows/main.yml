@@ -1,0 +1,64 @@
+name: Create Chrome Profile via VNC
+
+
+on:
+  workflow_dispatch: # Only allow manual triggering
+
+
+jobs:
+  setup-vnc-desktop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360 # Set the maximum timeout to 6 hours (360 minutes)
+
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+
+    - name: Install VNC, XFCE, and Chrome
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y tigervnc-standalone-server xfce4 xfce4-goodies wget
+        # Install Chrome
+        wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+        sudo dpkg -i google-chrome-stable_current_amd64.deb || sudo apt-get install -y -f
+        rm google-chrome-stable_current_amd64.deb
+
+
+    - name: Install cloudflared
+      run: |
+        wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+        sudo dpkg -i cloudflared-linux-amd64.deb
+
+
+    - name: Set VNC password
+      run: |
+        mkdir -p ~/.vnc
+        # Setting the password to 'password'. Use `vncpasswd` for interactive if you want.
+        echo "password" | vncpasswd -f > ~/.vnc/passwd
+        chmod 600 ~/.vnc/passwd
+
+
+    - name: Start VNC Server with XFCE
+      run: |
+        # Start the VNC server. The ':1' refers to display number 1 (port 5901).
+        vncserver :1 -geometry 1280x800 -depth 24 -localhost no -xstartup /usr/bin/xfce4-session &
+        sleep 5
+
+
+    - name: Expose VNC port with Cloudflare Tunnel
+      run: |
+        # This command will run until the job is cancelled.
+        # It prints a URL you can use to connect.
+        echo "=================================================="
+        echo "CONNECTION INSTRUCTIONS:"
+        echo "1. Download cloudflared on your local machine from:"
+        echo "   https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
+        echo "2. Run the command below in your local command prompt."
+        echo "3. Connect your VNC viewer (like TigerVNC) to 'localhost:5900'"
+        echo "=================================================="
+        cloudflared tunnel --url tcp://localhost:5901
+      env:
+        # This tells cloudflared to show a verbose output, which includes the hostname.
+        TUNNEL_ORIGIN_CERT: /dev/null
