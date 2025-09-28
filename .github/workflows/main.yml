@@ -1,30 +1,62 @@
-name: Run Python Script
+name: Create Chrome Profile via VNC
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-  schedule:
-    - cron: '0 0 * * *'  # Runs daily at midnight UTC
+  workflow_dispatch: # Manual trigger only
 
 jobs:
-  run-script:
+  build-chrome-profile:
     runs-on: ubuntu-latest
+    timeout-minutes: 360 # 6 hour maximum
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.x'
-
-    - name: Install dependencies
+    - name: Install Desktop Environment and Chrome
       run: |
-        python -m pip install --upgrade pip
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        sudo apt-get update
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+          xfce4 xfce4-goodies \
+          tigervnc-standalone-server \
+          wget \
+          gnupg \
+          ca-certificates
 
-    - name: Execute Python script
-      run: python script.py
+        # Install Google Chrome
+        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+        echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+        sudo apt-get update
+        sudo apt-get install -y google-chrome-stable
+
+    - name: Install cloudflared
+      run: |
+        wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+        sudo dpkg -i cloudflared-linux-amd64.deb
+
+    - name: Setup VNC password
+      run: |
+        mkdir -p ~/.vnc
+        echo "Jalingo@1" | vncpasswd -f > ~/.vnc/passwd
+        chmod 600 ~/.vnc/passwd
+
+    - name: Start VNC Server
+      run: |
+        # Start VNC server on display :1
+        vncserver :1 -geometry 1280x800 -depth 24 -localhost no -xstartup /usr/bin/xfce4-session &
+        sleep 5
+        echo "VNC server started on :1"
+
+    - name: Start Cloudflare Tunnel
+      run: |
+        echo "=== CLOUDFLARE TUNNEL STARTING ==="
+        echo "The tunnel will provide a URL for VNC connection"
+        echo "Keep this workflow running and connect via the URL below"
+        cloudflared tunnel --url tcp://localhost:5901
+
+    - name: Upload Chrome Profile as Artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: chrome-profile-backup
+        path: /home/runner/my_google_profile.tar.gz
+        retention-days: 1
